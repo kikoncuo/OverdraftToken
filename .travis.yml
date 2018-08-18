@@ -1,3 +1,7 @@
+before_script:
+  - npm install -g ganache-cli
+  - npm install -g truffle
+  - npm install
 script:
 - ganache-cli -p 8545 -d > /dev/null &
 - sleep 5
