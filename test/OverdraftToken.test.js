@@ -1,4 +1,5 @@
 const { assertRevert } = require('./helpers/assertRevert');
+const { assertException } = require('./helpers/assertException');
 const expectEvent = require('./helpers/expectEvent');
 
 const OverdraftToken = artifacts.require('OverdraftToken');
@@ -9,7 +10,7 @@ require('chai')
   .use(require('chai-bignumber')(BigNumber))
   .should();
 
-contract('OverdraftToken', function ([owner, recipient, anotherAccount]) {
+contract('OverdraftToken', function ([owner, recipient, anotherAccount, overdraftedAccount]) {
   const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
   beforeEach(async function () {
     this.token = await OverdraftToken.new();
@@ -459,5 +460,136 @@ contract('OverdraftToken', function ([owner, recipient, anotherAccount]) {
         logs[0].args.value.should.be.bignumber.equal(amount);
       });
     });
+
   });
+
+  describe('onlyOwner', function () {
+    describe('when someone other than the owner calls an onlyOwner function', function () {
+      it('throws', async function () {
+        await assertRevert(this.token.pauseReceive(recipient, { from: anotherAccount }));
+      });
+    });
+  });
+
+  describe('editOverdraft', function () {
+    const overdraftAmount = 100;
+    describe('when the maximum overdraft amount is increased', function () {
+      it('the balance increases old balance + overdraft', async function () {
+        const oldBalance = await this.token.balanceOf(owner);
+        await this.token.editOverdraft(owner, overdraftAmount, { from: owner });
+        (await this.token.balanceOf(owner)).should.be.bignumber.equal( parseInt(oldBalance) + parseInt(overdraftAmount));
+      });
+    });
+    it('emits an OverdraftChanged event', async function () {
+      const { logs } = await this.token.editOverdraft(overdraftedAccount, overdraftAmount, { from: owner });
+      logs.length.should.eq(1);
+      logs[0].event.should.eq('OverdraftChanged');
+      logs[0].args.addressChanged.should.eq(overdraftedAccount);
+      logs[0].args.overdraftChanger.should.eq(owner);
+      logs[0].args.overdraftAmount.should.be.bignumber.equal(overdraftAmount);
+    });
+
+    describe('when the account can make a transfer using new maximum overdraft', function () {
+      it('transfers the requested amount', async function () {
+        const newBalance = await this.token.balanceOf(owner);
+        await this.token.transfer(anotherAccount, newBalance, { from: owner });
+        (await this.token.balanceOf(owner)).should.be.bignumber.equal(0);
+        (await this.token.balanceOf(anotherAccount)).should.be.bignumber.equal(newBalance);
+      });
+    });
+
+    describe('when the maximum overdraft is reduced and new limit surpases current overdraft', function () {
+      const oldOverdraft = 100;
+      const newOverdraft = 50;
+      it('throws', async function () {
+        await this.token.editOverdraft(owner, oldOverdraft, { from: owner });
+        await this.token.transfer(anotherAccount, await this.token.balanceOf(owner), { from: owner });
+        await assertException(this.token.editOverdraft(owner, newOverdraft, { from: owner }));
+      });
+    });
+  });
+
+  describe('balanceOfWithOverdraft', function () {
+    describe('when balance in negative is queried', function () {
+      const amount = 50;
+      it('balance in negative is returned', async function () {
+        await this.token.editOverdraft(owner, amount, { from: owner });
+        await this.token.transfer(anotherAccount, await this.token.balanceOf(owner), { from: owner });
+        (await this.token.balanceOfWithOverdraft(owner)).should.be.bignumber.equal(-50);
+      });
+    });
+  });
+
+  describe('pauseReceive', function () {
+    describe('when an account\'s ability to receive is paused', function () {
+      const amount = 50;
+      it('transactions throw when that account is a transaction\'s destination', async function () {
+        await this.token.pauseReceive(recipient, { from: owner });
+        await assertRevert(this.token.transfer(recipient, amount, { from: owner }));
+      });
+      it('emits an ReceivePaused event', async function () {
+        const { logs } = await this.token.pauseReceive(recipient, { from: owner });
+        logs.length.should.eq(1);
+        logs[0].event.should.eq('ReceivePaused');
+        logs[0].args.addressChanged.should.eq(recipient);
+        logs[0].args.changer.should.eq(owner);
+      });
+    });
+  });
+
+  describe('unpauseReceive', function () {
+    describe('when an account\'s ability to receive is paused', function () {
+      const amount = 50;
+      it('transactions throw when that account is a transaction\'s destination', async function () {
+        await this.token.pauseReceive(recipient, { from: owner });
+        await this.token.unpauseReceive(recipient, { from: owner });
+        await this.token.transfer(recipient, amount, { from: owner });
+        (await this.token.balanceOf(recipient)).should.be.bignumber.equal(amount);
+      });
+      it('emits an ReceiveUnpaused event', async function () {
+        const { logs } = await this.token.unpauseReceive(recipient, { from: owner });
+        logs.length.should.eq(1);
+        logs[0].event.should.eq('ReceiveUnpaused');
+        logs[0].args.addressChanged.should.eq(recipient);
+        logs[0].args.changer.should.eq(owner);
+      });
+    });
+  });
+
+  describe('pauseTransfer', function () {
+    describe('when an account\'s ability to transfer is paused', function () {
+      const amount = 50;
+      it('transactions throw when that account is a transaction\'s sender', async function () {
+        await this.token.pauseTransfer(owner, { from: owner });
+        await assertRevert(this.token.transfer(recipient, amount, { from: owner }));
+      });
+      it('emits an TransferPaused event', async function () {
+        const { logs } = await this.token.pauseTransfer(recipient, { from: owner });
+        logs.length.should.eq(1);
+        logs[0].event.should.eq('TransferPaused');
+        logs[0].args.addressChanged.should.eq(recipient);
+        logs[0].args.changer.should.eq(owner);
+      });
+    });
+  });
+
+  describe('unpauseTransfer', function () {
+    describe('when an account\'s ability to transfer is paused', function () {
+      const amount = 50;
+      it('transactions throw when that account is a transaction\'s sender', async function () {
+        await this.token.pauseTransfer(owner, { from: owner });
+        await this.token.unpauseTransfer(owner, { from: owner });
+        await this.token.transfer(recipient, amount, { from: owner });
+        (await this.token.balanceOf(recipient)).should.be.bignumber.equal(amount);
+      });
+      it('emits an TransferUnpaused event', async function () {
+        const { logs } = await this.token.unpauseTransfer(recipient, { from: owner });
+        logs.length.should.eq(1);
+        logs[0].event.should.eq('TransferUnpaused');
+        logs[0].args.addressChanged.should.eq(recipient);
+        logs[0].args.changer.should.eq(owner);
+      });
+    });
+  });
+
 });
