@@ -1,16 +1,16 @@
 const should = require('chai')
   .should();
 
-async function assertRevert (promise) {
+async function assertException (promise) {
   try {
     await promise;
   } catch (error) {
-    error.message.should.include('revert', `Expected "revert", got ${error} instead`);
+    error.message.should.include('Exception', `Expected "Exception", got ${error} instead`);
     return;
   }
   should.fail('Expected revert not received');
 }
 
 module.exports = {
-  assertRevert,
+  assertException,
 };
