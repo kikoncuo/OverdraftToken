@@ -509,6 +509,17 @@ contract('OverdraftToken', function ([owner, recipient, anotherAccount, overdraf
     });
   });
 
+  describe('balanceOfWithOverdraft', function () {
+    describe('when balance in negative is queried', function () {
+      const amount = 50;
+      it('balance in negative is returned', async function () {
+        await this.token.editOverdraft(owner, amount, { from: owner });
+        await this.token.transfer(anotherAccount, await this.token.balanceOf(owner), { from: owner });
+        (await this.token.balanceOfWithOverdraft(owner)).should.be.bignumber.equal(-50);
+      });
+    });
+  });
+
   describe('pauseReceive', function () {
     describe('when an account\'s ability to receive is paused', function () {
       const amount = 50;
