@@ -62,6 +62,15 @@ contract OverdraftToken is StandardToken, Ownable{
     }
 
     /**
+    * @dev returns balance taking in account the overdraft of the account (using - is safe since overdraft is uint8 there can't be overflow)
+    * @param _owner address to be queried
+    */
+    function balanceOfWithOverdraft(address _owner) public view returns (int256) {
+        int256 balance = int256(balanceOf(_owner));
+        return balance - accountOverdraft[_owner];
+    }
+
+    /**
     * @dev Pauses the ability of an account to receive tokens
     * @param _addressToPause address to be paused
     */
